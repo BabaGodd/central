@@ -4,12 +4,11 @@ Accra → Sawla. Third of the Eastern / Western / Central Corridor series.
 
 ## Before deploying
 
-1. Open `config.js` and replace `MAPBOX_TOKEN` with your real **public**
-   Mapbox token (starts with `pk.`).
-2. Push to GitHub. If the secret scanner flags the token, mark it a false
-   positive (it's public), then restrict it to your deployment domain at
-   account.mapbox.com.
-3. Deploy the folder to Vercel as-is (static site, no build step).
+1. Copy `config.local.example.js` to `config.local.js` and set
+   `window.MAPBOX_TOKEN` to your Mapbox public token.
+2. Keep `config.local.js` out of Git. Configure the same file as a deployment
+   asset when deploying this static site.
+3. Deploy the folder to Vercel (static site, no build step).
 
 ## Route notes
 
@@ -38,7 +37,8 @@ Yeji → Bimbila → Yendi → Sawla**.
 ## Files
 
 - `index.html` / `style.css` — structure and HUD styling
-- `config.js` — all route, station, branding and camera config
+- `config.js` — route, station, branding, camera, and map style config
+- `config.local.example.js` — template for the ignored local Mapbox config
 - `app.js` — Mapbox init, terrain, route rendering, native GL train layer, chase camera, HUD, controls
 - `splash.css` / `splash.js` — loading screen
 - `manifest.json` / `sw.js` / `icons/` — PWA

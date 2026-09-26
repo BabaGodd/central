@@ -23,11 +23,8 @@
    ============================================================ */
 
 // ---- Mapbox ----
-// Public token only (starts with "pk."). Replace before deploying.
-// If GitHub's secret scanner flags this on push, mark it a false
-// positive, then restrict the token to your deployment domain at
-// account.mapbox.com.
-const MAPBOX_TOKEN = window.MAPBOX_TOKEN;
+// Set the public token in config.local.js, which is excluded from Git.
+const MAPBOX_TOKEN = window.MAPBOX_TOKEN || '';
 
 // ---- Branding ----
 const BRAND = {
