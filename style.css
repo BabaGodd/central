@@ -927,6 +927,15 @@ button {
    ============================================================ */
 
 @media (max-width: 700px) {
+  .bottom-bar {
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  }
+
+  .ctrl-btn {
+    width: 44px;
+    height: 44px;
+  }
+
   .panel {
     width: 168px;
   }
@@ -1004,11 +1013,6 @@ button {
       15px
       11px
       12px;
-  }
-
-  .ctrl-btn {
-    width: 34px;
-    height: 34px;
   }
 
   .arrival-inner {
