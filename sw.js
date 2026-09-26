@@ -6,7 +6,7 @@
    Mapbox's own layer.
    ============================================================ */
 
-const CACHE_NAME = 'central-corridor-v3';
+const CACHE_NAME = 'central-corridor-v4';
 const APP_SHELL = [
   './',
   './index.html',

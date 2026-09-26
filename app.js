@@ -471,12 +471,3 @@ function onArrival() {
 document.getElementById('btnPlayPause').addEventListener('click', () => Playback.toggle());
 document.getElementById('btnRestart').addEventListener('click', () => Playback.restart());
 document.getElementById('btnArrivalRestart').addEventListener('click', () => Playback.restart());
-
-// ---------------------------------------------------------------
-// PWA service worker
-// ---------------------------------------------------------------
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
-}

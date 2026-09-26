@@ -126,6 +126,13 @@
     window.showSplashError('Mapbox token is missing. Add config.local.js to the deployment.');
   }
 </script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
 </body>
 </html>
  
