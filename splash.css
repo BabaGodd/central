@@ -176,6 +176,26 @@
   pointer-events: none;
 }
 
+.splash.has-error .splash-status {
+  max-width: min(340px, 82vw);
+  margin-right: auto;
+  margin-left: auto;
+  line-height: 1.6;
+  color: rgba(244, 247, 246, 0.9);
+  letter-spacing: 0.3px;
+}
+
+.splash.has-error .splash-status::before {
+  flex: 0 0 5px;
+  background: #ce1126;
+  box-shadow: 0 0 8px rgba(206, 17, 38, 0.65);
+  animation: none;
+}
+
+.splash.has-error .splash-progress {
+  display: none;
+}
+
 /* ============================================================
    CONTENT
    ============================================================ */

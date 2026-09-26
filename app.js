@@ -17,6 +17,13 @@ const map = new mapboxgl.Map({
   antialias: true,
 });
 
+map.on('error', (event) => {
+  const status = event.error && event.error.status;
+  if (status === 401 || status === 403) {
+    window.showSplashError('Mapbox rejected the token. Check its status and allowed domains.');
+  }
+});
+
 // ---------------------------------------------------------------
 // Route construction: stations + unlabeled shape points, smoothed
 // ---------------------------------------------------------------

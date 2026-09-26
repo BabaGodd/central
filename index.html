@@ -117,7 +117,15 @@
 <script src="config.local.js"></script>
 <script src="config.js"></script>
 <script src="splash.js"></script>
-<script src="app.js"></script>
+<script>
+  if (MAPBOX_TOKEN) {
+    const appScript = document.createElement('script');
+    appScript.src = 'app.js';
+    document.body.appendChild(appScript);
+  } else {
+    window.showSplashError('Mapbox token is missing. Add config.local.js to the deployment.');
+  }
+</script>
 </body>
 </html>
  
