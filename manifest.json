@@ -1,0 +1,14 @@
+{
+  "name": "Central Corridor — GRDA Route Simulation",
+  "short_name": "Central Corridor",
+  "description": "Ghana Railway Development Authority — Central Corridor 3D route simulation, Accra to Sawla.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#071018",
+  "theme_color": "#071018",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

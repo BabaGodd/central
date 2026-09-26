@@ -1,0 +1,1056 @@
+/* ============================================================
+   GHANA RAILWAY VISUALIZER
+   PREMIUM MAP / OPERATIONS INTERFACE
+   CSS ONLY — NO LOGIC CHANGES
+   ============================================================ */
+
+:root {
+  --gold: #fcd116;
+  --gold-bright: #ffe45c;
+  --gold-soft: rgba(252, 209, 22, 0.13);
+
+  --green: #006b3f;
+  --green-bright: #00a86b;
+
+  --red: #ce1126;
+
+  --bg: #050b10;
+  --bg-soft: #08131c;
+
+  --panel-bg: rgba(5, 13, 20, 0.76);
+  --panel-bg-heavy: rgba(5, 13, 20, 0.91);
+
+  --panel-border: rgba(252, 209, 22, 0.20);
+  --panel-border-soft: rgba(255, 255, 255, 0.075);
+
+  --text: #f5f8f7;
+  --text-dim: rgba(244, 247, 246, 0.60);
+  --text-muted: rgba(244, 247, 246, 0.36);
+
+  --shadow:
+    0 18px 50px rgba(0, 0, 0, 0.36),
+    0 4px 15px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   BASE
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+
+  width: 100%;
+  height: 100%;
+
+  background: var(--bg);
+
+  color: var(--text);
+
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+
+  overflow: hidden;
+
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* ============================================================
+   APP
+   ============================================================ */
+
+#app {
+  position: relative;
+
+  width: 100vw;
+  height: 100vh;
+
+  opacity: 0;
+
+  transition:
+    opacity 0.8s
+    cubic-bezier(0.16, 1, 0.3, 1);
+
+  isolation: isolate;
+}
+
+#app.ready {
+  opacity: 1;
+}
+
+/* ============================================================
+   MAP
+   ============================================================ */
+
+#map {
+  position: absolute;
+  inset: 0;
+
+  width: 100%;
+  height: 100%;
+
+  background: #071018;
+}
+
+/* subtle cinematic vignette over map */
+#app::after {
+  content: "";
+
+  position: absolute;
+  inset: 0;
+
+  z-index: 5;
+
+  pointer-events: none;
+
+  background:
+    radial-gradient(
+      ellipse at center,
+      transparent 45%,
+      rgba(0, 0, 0, 0.10) 75%,
+      rgba(0, 0, 0, 0.32) 100%
+    );
+}
+
+/* ============================================================
+   BRAND BAR
+   ============================================================ */
+
+.brand-bar {
+  position: absolute;
+
+  top: env(safe-area-inset-top, 0px);
+  left: 0;
+  right: 0;
+
+  z-index: 20;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  padding:
+    15px
+    18px
+    42px;
+
+  background:
+    linear-gradient(
+      180deg,
+      rgba(3, 9, 14, 0.94),
+      rgba(3, 9, 14, 0.68) 40%,
+      transparent
+    );
+
+  pointer-events: none;
+}
+
+/* ============================================================
+   BRAND
+   ============================================================ */
+
+.brand-left {
+  display: flex;
+  align-items: center;
+
+  gap: 11px;
+}
+
+.brand-seal {
+  width: 37px;
+  height: 37px;
+
+  border-radius: 50%;
+
+  background: #fff;
+
+  border: 1.5px solid var(--gold);
+
+  overflow: hidden;
+
+  flex-shrink: 0;
+
+  box-shadow:
+    0 0 0 3px rgba(252, 209, 22, 0.055),
+    0 7px 22px rgba(0, 0, 0, 0.38);
+}
+
+.brand-seal img {
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+}
+
+.brand-title {
+  font-size: 12px;
+
+  font-weight: 850;
+
+  letter-spacing: 1.9px;
+
+  text-transform: uppercase;
+
+  line-height: 1.1;
+
+  text-shadow:
+    0 2px 12px rgba(0, 0, 0, 0.75);
+}
+
+.brand-subtitle {
+  margin-top: 4px;
+
+  font-size: 8px;
+
+  font-weight: 600;
+
+  letter-spacing: 1px;
+
+  color: var(--text-dim);
+
+  text-transform: uppercase;
+}
+
+/* ============================================================
+   LIVE INDICATOR
+   ============================================================ */
+
+.brand-right {
+  display: flex;
+  align-items: center;
+
+  gap: 7px;
+
+  padding: 7px 10px;
+
+  border-radius: 999px;
+
+  background:
+    rgba(3, 10, 15, 0.55);
+
+  border: 1px solid rgba(255, 255, 255, 0.08);
+
+  box-shadow:
+    0 7px 22px rgba(0, 0, 0, 0.25);
+
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.live-dot {
+  width: 7px;
+  height: 7px;
+
+  border-radius: 50%;
+
+  background: #ff3d52;
+
+  box-shadow:
+    0 0 0 3px rgba(206, 17, 38, 0.12),
+    0 0 12px rgba(206, 17, 38, 0.85);
+
+  animation:
+    pulse 1.6s ease-in-out infinite;
+}
+
+.live-label {
+  font-size: 8px;
+
+  font-weight: 800;
+
+  letter-spacing: 1.35px;
+
+  color: rgba(255, 255, 255, 0.70);
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.38;
+    transform: scale(0.8);
+  }
+}
+
+/* ============================================================
+   PANELS
+   ============================================================ */
+
+.panel {
+  position: absolute;
+
+  z-index: 15;
+
+  width: 188px;
+
+  padding: 13px 14px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(10, 25, 36, 0.84),
+      rgba(4, 11, 17, 0.76)
+    );
+
+  backdrop-filter:
+    blur(20px)
+    saturate(125%);
+
+  -webkit-backdrop-filter:
+    blur(20px)
+    saturate(125%);
+
+  border:
+    1px solid var(--panel-border);
+
+  border-radius: 14px;
+
+  box-shadow:
+    var(--shadow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.055);
+
+  overflow: hidden;
+}
+
+/* gold scanning line */
+.panel::before {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  left: 20px;
+  right: 20px;
+
+  height: 1px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      rgba(252, 209, 22, 0.7),
+      transparent
+    );
+
+  box-shadow:
+    0 0 12px rgba(252, 209, 22, 0.20);
+}
+
+.panel-left {
+  top: 70px;
+  left: 16px;
+}
+
+.panel-right {
+  top: 70px;
+  right: 16px;
+}
+
+/* ============================================================
+   PANEL HEADING
+   ============================================================ */
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+
+  gap: 7px;
+
+  font-size: 8px;
+
+  font-weight: 850;
+
+  letter-spacing: 1.5px;
+
+  text-transform: uppercase;
+
+  color: var(--gold);
+
+  margin-bottom: 8px;
+}
+
+.panel-heading::before {
+  content: "";
+
+  width: 5px;
+  height: 5px;
+
+  border-radius: 50%;
+
+  background: var(--gold);
+
+  box-shadow:
+    0 0 7px rgba(252, 209, 22, 0.8);
+}
+
+/* ============================================================
+   PANEL DATA
+   ============================================================ */
+
+.panel-row {
+  display: flex;
+
+  justify-content: space-between;
+  align-items: baseline;
+
+  gap: 10px;
+
+  font-size: 9.5px;
+
+  padding: 4px 0;
+
+  line-height: 1.3;
+
+  border-top:
+    1px solid
+    rgba(255, 255, 255, 0.055);
+}
+
+.panel-row:first-of-type {
+  border-top: none;
+}
+
+.panel-row span {
+  color: var(--text-dim);
+}
+
+.panel-row strong {
+  font-size: 10.5px;
+
+  font-weight: 750;
+
+  color: rgba(255, 255, 255, 0.94);
+
+  font-variant-numeric: tabular-nums;
+}
+
+.status-live {
+  color: var(--gold) !important;
+
+  text-shadow:
+    0 0 10px rgba(252, 209, 22, 0.22);
+}
+
+/* ============================================================
+   BOTTOM CONTROL SYSTEM
+   ============================================================ */
+
+.bottom-bar {
+  position: absolute;
+
+  left: 0;
+  right: 0;
+
+  bottom: env(safe-area-inset-bottom, 0px);
+
+  z-index: 20;
+
+  display: flex;
+  align-items: center;
+
+  gap: 11px;
+
+  padding:
+    20px
+    18px
+    17px;
+
+  background:
+    linear-gradient(
+      0deg,
+      rgba(3, 9, 14, 0.96),
+      rgba(3, 9, 14, 0.72) 42%,
+      transparent
+    );
+}
+
+/* ============================================================
+   CONTROL BUTTON
+   ============================================================ */
+
+.ctrl-btn {
+  position: relative;
+
+  width: 38px;
+  height: 38px;
+
+  border-radius: 50%;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(252, 209, 22, 0.17),
+      rgba(252, 209, 22, 0.055)
+    );
+
+  border:
+    1px solid
+    rgba(252, 209, 22, 0.30);
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  cursor: pointer;
+
+  flex-shrink: 0;
+
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  transition:
+    transform 0.18s ease,
+    background 0.22s ease,
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
+}
+
+.ctrl-btn:hover {
+  transform: translateY(-1px);
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(252, 209, 22, 0.28),
+      rgba(252, 209, 22, 0.10)
+    );
+
+  border-color:
+    rgba(252, 209, 22, 0.60);
+
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.35),
+    0 0 22px rgba(252, 209, 22, 0.10);
+}
+
+.ctrl-btn:active {
+  transform: scale(0.91);
+}
+
+.ctrl-btn svg {
+  width: 15px;
+  height: 15px;
+
+  fill: var(--gold);
+
+  filter:
+    drop-shadow(
+      0 0 5px
+      rgba(252, 209, 22, 0.35)
+    );
+}
+
+/* ============================================================
+   PROGRESS SYSTEM
+   ============================================================ */
+
+.progress-wrap {
+  flex: 1;
+
+  min-width: 0;
+}
+
+.progress-times {
+  display: flex;
+
+  justify-content: space-between;
+
+  font-size: 9px;
+
+  color: var(--text-dim);
+
+  margin-bottom: 5px;
+
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-track {
+  position: relative;
+
+  height: 4px;
+
+  border-radius: 999px;
+
+  background:
+    rgba(255, 255, 255, 0.10);
+
+  overflow: hidden;
+
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.progress-fill {
+  position: relative;
+
+  height: 100%;
+
+  width: 0%;
+
+  border-radius: 999px;
+
+  background:
+    linear-gradient(
+      90deg,
+      var(--green),
+      var(--green-bright) 38%,
+      var(--gold)
+    );
+
+  box-shadow:
+    0 0 12px rgba(252, 209, 22, 0.22);
+
+  transition:
+    width 0.2s linear;
+}
+
+.progress-fill::after {
+  content: "";
+
+  position: absolute;
+
+  top: 50%;
+  right: 0;
+
+  width: 7px;
+  height: 7px;
+
+  transform: translateY(-50%);
+
+  border-radius: 50%;
+
+  background: var(--gold-bright);
+
+  box-shadow:
+    0 0 0 2px rgba(252, 209, 22, 0.18),
+    0 0 12px rgba(252, 209, 22, 0.8);
+}
+
+.progress-labels {
+  display: flex;
+
+  justify-content: space-between;
+
+  font-size: 8px;
+
+  color: var(--text-muted);
+
+  margin-top: 5px;
+
+  text-transform: uppercase;
+
+  letter-spacing: 0.7px;
+}
+
+/* ============================================================
+   ARRIVAL / DESTINATION OVERLAY
+   ============================================================ */
+
+.arrival-panel {
+  position: absolute;
+
+  inset: 0;
+
+  z-index: 30;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 20px;
+
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(0, 107, 63, 0.09),
+      transparent 45%
+    ),
+    rgba(2, 8, 12, 0.79);
+
+  backdrop-filter:
+    blur(12px)
+    saturate(120%);
+
+  -webkit-backdrop-filter:
+    blur(12px)
+    saturate(120%);
+
+  opacity: 0;
+
+  pointer-events: none;
+
+  transition:
+    opacity 0.5s ease;
+}
+
+.arrival-panel.show {
+  opacity: 1;
+
+  pointer-events: all;
+}
+
+.arrival-inner {
+  position: relative;
+
+  width: min(390px, 90vw);
+
+  text-align: center;
+
+  padding:
+    38px
+    38px
+    32px;
+
+  background:
+    linear-gradient(
+      145deg,
+      rgba(12, 29, 41, 0.96),
+      rgba(4, 11, 17, 0.96)
+    );
+
+  border:
+    1px solid
+    rgba(252, 209, 22, 0.25);
+
+  border-radius: 20px;
+
+  box-shadow:
+    0 35px 90px rgba(0, 0, 0, 0.58),
+    0 0 45px rgba(252, 209, 22, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.065);
+
+  transform:
+    translateY(18px)
+    scale(0.95);
+
+  opacity: 0;
+
+  transition:
+    transform 0.65s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.6s ease;
+}
+
+.arrival-inner::before {
+  content: "";
+
+  position: absolute;
+
+  top: 0;
+  left: 15%;
+  right: 15%;
+
+  height: 2px;
+
+  border-radius: 0 0 10px 10px;
+
+  background:
+    linear-gradient(
+      90deg,
+      transparent,
+      var(--gold),
+      transparent
+    );
+
+  box-shadow:
+    0 0 15px rgba(252, 209, 22, 0.25);
+}
+
+.arrival-inner::after {
+  content: "";
+
+  position: absolute;
+
+  inset: 9px;
+
+  border:
+    1px solid
+    rgba(255, 255, 255, 0.025);
+
+  border-radius: 14px;
+
+  pointer-events: none;
+}
+
+.arrival-panel.show .arrival-inner {
+  transform:
+    translateY(0)
+    scale(1);
+
+  opacity: 1;
+}
+
+.arrival-seal {
+  position: relative;
+
+  width: 62px;
+  height: 62px;
+
+  border-radius: 50%;
+
+  background: #fff;
+
+  border:
+    2px solid
+    var(--gold);
+
+  margin:
+    0 auto
+    17px;
+
+  overflow: hidden;
+
+  box-shadow:
+    0 0 0 5px rgba(252, 209, 22, 0.05),
+    0 0 28px rgba(252, 209, 22, 0.22),
+    0 12px 30px rgba(0, 0, 0, 0.40);
+}
+
+.arrival-seal img {
+  width: 100%;
+  height: 100%;
+
+  object-fit: cover;
+}
+
+.arrival-title {
+  font-size: 10px;
+
+  font-weight: 850;
+
+  letter-spacing: 3.8px;
+
+  color: var(--gold);
+
+  margin-bottom: 8px;
+
+  text-transform: uppercase;
+}
+
+.arrival-station {
+  font-size: 26px;
+
+  font-weight: 850;
+
+  letter-spacing: -0.5px;
+
+  line-height: 1.08;
+
+  margin-bottom: 7px;
+}
+
+.arrival-sub {
+  font-size: 10px;
+
+  line-height: 1.5;
+
+  color: var(--text-dim);
+
+  margin-bottom: 22px;
+}
+
+.arrival-btn {
+  font-family: inherit;
+
+  font-size: 10px;
+
+  font-weight: 850;
+
+  letter-spacing: 1.25px;
+
+  text-transform: uppercase;
+
+  padding:
+    12px
+    26px;
+
+  min-width: 135px;
+
+  border-radius: 999px;
+
+  background:
+    linear-gradient(
+      135deg,
+      var(--gold-bright),
+      var(--gold)
+    );
+
+  color: #071018;
+
+  border: none;
+
+  cursor: pointer;
+
+  box-shadow:
+    0 8px 25px rgba(252, 209, 22, 0.18);
+
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.22s ease,
+    filter 0.18s ease;
+}
+
+.arrival-btn:hover {
+  transform: translateY(-1px);
+
+  filter: brightness(1.06);
+
+  box-shadow:
+    0 12px 32px rgba(252, 209, 22, 0.28),
+    0 0 20px rgba(252, 209, 22, 0.10);
+}
+
+.arrival-btn:active {
+  transform: scale(0.95);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+
+@media (max-width: 700px) {
+  .panel {
+    width: 168px;
+  }
+
+  .panel-left {
+    left: 11px;
+  }
+
+  .panel-right {
+    right: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-bar {
+    padding:
+      11px
+      12px
+      35px;
+  }
+
+  .brand-seal {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand-title {
+    font-size: 10px;
+    letter-spacing: 1.4px;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .brand-right {
+    padding: 5px 7px;
+  }
+
+  .live-label {
+    display: none;
+  }
+
+  .panel {
+    width: 132px;
+
+    padding:
+      8px
+      9px;
+
+    border-radius: 11px;
+  }
+
+  .panel-left,
+  .panel-right {
+    top: 58px;
+  }
+
+  .panel-heading {
+    font-size: 7px;
+  }
+
+  .panel-row {
+    font-size: 8px;
+  }
+
+  .panel-row strong {
+    font-size: 9px;
+  }
+
+  .bottom-bar {
+    gap: 8px;
+
+    padding:
+      15px
+      11px
+      12px;
+  }
+
+  .ctrl-btn {
+    width: 34px;
+    height: 34px;
+  }
+
+  .arrival-inner {
+    width: min(350px, 92vw);
+
+    padding:
+      32px
+      23px
+      27px;
+  }
+
+  .arrival-station {
+    font-size: 22px;
+  }
+}
+
+/* ============================================================
+   TOUCH
+   ============================================================ */
+
+@media (hover: none) {
+  .ctrl-btn:hover,
+  .arrival-btn:hover {
+    transform: none;
+  }
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot {
+    animation: none;
+  }
+
+  .splash,
+  .ctrl-btn,
+  .arrival-btn,
+  .progress-fill,
+  .arrival-inner,
+  .arrival-panel {
+    transition: none;
+  }
+}

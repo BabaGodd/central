@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Central Corridor — GRDA Live Route Simulation</title>
+<meta name="description" content="Ghana Railway Development Authority — Central Corridor 3D route simulation, Accra to Sawla." />
+<meta name="theme-color" content="#071018" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.css" rel="stylesheet" />
+
+<link rel="stylesheet" href="splash.css" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<!-- ================= SPLASH SCREEN ================= -->
+<div id="splash" class="splash">
+  <div class="splash-inner">
+    <div class="splash-seal">
+      <div class="splash-seal-ring"></div>
+      <img src="grda-logo.png" alt="GRDA seal" class="splash-seal-logo" />
+    </div>
+    <h1 class="splash-title">CENTRAL CORRIDOR</h1>
+    <p class="splash-subtitle">Ghana Railway Development Authority</p>
+
+    <svg class="splash-route" viewBox="0 0 320 40" preserveAspectRatio="none" aria-hidden="true">
+      <path id="splashRoutePath" d="M10,30 C 80,5 120,35 160,20 S 260,5 310,15" />
+    </svg>
+
+    <p id="splashStatus" class="splash-status">Initializing terrain engine…</p>
+    <div class="splash-progress"><div id="splashProgressBar" class="splash-progress-bar"></div></div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" class="app">
+
+  <!-- Top brand bar -->
+  <header class="brand-bar">
+    <div class="brand-left">
+      <div class="brand-seal"><img src="grda-logo.png" alt="GRDA" /></div>
+      <div class="brand-text">
+        <div class="brand-title">CENTRAL CORRIDOR</div>
+        <div class="brand-subtitle">Ghana Railway Development Authority</div>
+      </div>
+    </div>
+    <div class="brand-right">
+      <span class="live-dot"></span>
+      <span class="live-label">LIVE ROUTE SIMULATION</span>
+    </div>
+  </header>
+
+  <!-- Left panel: route overview -->
+  <aside class="panel panel-left" id="panelRoute">
+    <div class="panel-heading">Route Overview</div>
+    <div class="panel-row"><span>Origin</span><strong id="routeOrigin">Accra</strong></div>
+    <div class="panel-row"><span>Destination</span><strong id="routeDestination">Sawla</strong></div>
+    <div class="panel-row"><span>Distance</span><strong id="routeDistance">—</strong></div>
+    <div class="panel-row"><span>Status</span><strong id="routeStatus" class="status-live">En Route</strong></div>
+  </aside>
+
+  <!-- Right panel: journey status -->
+  <aside class="panel panel-right" id="panelJourney">
+    <div class="panel-heading">Journey Status</div>
+    <div class="panel-row"><span>Current</span><strong id="journeyCurrent">Accra</strong></div>
+    <div class="panel-row"><span>Next</span><strong id="journeyNext">Achimota</strong></div>
+    <div class="panel-row"><span>To Next</span><strong id="journeyToNext">—</strong></div>
+    <div class="panel-row"><span>Complete</span><strong id="journeyPercent">0%</strong></div>
+  </aside>
+
+  <!-- Bottom bar -->
+  <footer class="bottom-bar">
+    <button id="btnPlayPause" class="ctrl-btn" aria-label="Play or pause">
+      <svg id="iconPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="iconPause" viewBox="0 0 24 24" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
+    </button>
+    <button id="btnRestart" class="ctrl-btn" aria-label="Restart">
+      <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
+    </button>
+
+    <div class="progress-wrap">
+      <div class="progress-times">
+        <span id="timeElapsed">00:00</span>
+        <span id="timeTotal">07:00</span>
+      </div>
+      <div class="progress-track">
+        <div id="progressFill" class="progress-fill"></div>
+      </div>
+      <div class="progress-labels">
+        <span id="labelStart">Accra</span>
+        <span id="labelEnd">Sawla</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Arrival panel -->
+  <div id="arrivalPanel" class="arrival-panel">
+    <div class="arrival-inner">
+      <div class="arrival-seal"><img src="grda-logo.png" alt="GRDA" /></div>
+      <div class="arrival-title">ARRIVED</div>
+      <div class="arrival-station" id="arrivalStation">Sawla</div>
+      <div class="arrival-sub">Central Corridor simulation complete</div>
+      <button id="btnArrivalRestart" class="arrival-btn">Run Again</button>
+    </div>
+  </div>
+
+  <div id="map"></div>
+</div>
+
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.30.0/mapbox-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+<script src="config.js"></script>
+<script src="splash.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
