@@ -366,7 +366,10 @@ const Playback = (() => {
 
     document.getElementById('journeyCurrent').textContent = current.name;
     document.getElementById('journeyNext').textContent = idx < STATIONS.length - 1 ? next.name : '—';
-    document.getElementById('journeyToNext').textContent = idx < STATIONS.length - 1 ? Math.round(toNextKm) + ' km' : 'Arrived';
+    const journeyToNext = document.getElementById('journeyToNext');
+    if (journeyToNext) {
+      journeyToNext.textContent = idx < STATIONS.length - 1 ? Math.round(toNextKm) + ' km' : 'Arrived';
+    }
     document.getElementById('journeyPercent').textContent = Math.round(fraction * 100) + '%';
     document.getElementById('timeElapsed').textContent = formatTime(elapsed);
     document.getElementById('progressFill').style.width = (fraction * 100) + '%';
