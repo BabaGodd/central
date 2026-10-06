@@ -23,7 +23,10 @@
    ============================================================ */
 
 // ---- Mapbox ----
-// Set the public token in config.local.js, which is excluded from Git.
+// Public token only (starts with "pk."). Replace before deploying.
+// If GitHub's secret scanner flags this on push, mark it a false
+// positive, then restrict the token to your deployment domain at
+// account.mapbox.com.
 const MAPBOX_TOKEN = window.MAPBOX_TOKEN || '';
 
 // ---- Branding ----
@@ -88,17 +91,51 @@ const CORRIDOR_STYLE = {
   },
 };
 
+// ---- 3D train model ----
+// Reused as-is from the Eastern Corridor project. Place
+// Ghana_Freight_Train.glb in the same folder as index.html.
+const MODEL = {
+  uri: 'Ghana_Freight_Train.glb',
+  scale: [1, 1, 1], // built in real-world meters, so no scaling needed
+  // Lateral offset to recenter the model ON the route line (its own
+  // origin isn't centered on its width) — a few meters. Starting
+  // value per the Eastern Corridor notes — confirm visually, adjust
+  // if it drifts the wrong way (flip sign, or swap +90/-90 below).
+  lateralOffsetM: 1.7,
+  // Yaw correction added on top of the real travel bearing. Mapbox's
+  // model source faces a model's local +Z axis toward world SOUTH at
+  // zero yaw, not north — so raw compass bearing is not plug-and-play.
+  // UNCONFIRMED — start at 0, then correct in 90° steps by watching
+  // whether the train appears to drive forward, backward, or sideways
+  // relative to the track. This needs a visual test; don't trust it
+  // blindly.
+  bearingOffsetDeg: 0,
+};
+
 // ---- Camera ----
 const CAMERA = {
-  chaseBehindKm: 0.4,       // real distance behind the train, in km (~400m)
-  heightAboveTerrainM: 500, // camera height relative to terrain elevation at its position
+  chaseBehindKm: 0.16,        // keep enough distance to frame the full 80m train
+  heightAboveGroundM: 50,     // raise the chase view to show the train's full length
+  // Sideways offset from a pure rear-chase position, so the shot shows
+  // the train's side/length plus surrounding terrain rather than just
+  // staring straight down the track at its back end. ~70m sideways at
+  // ~160m behind gives a three-quarter angle. Tune by feel.
+  sideOffsetKm: 0.07,
+  cameraSmoothing: 0.08,      // Eastern Corridor's confirmed-good value (not yet wired in — see app.js note)
   pitch: 68,
-  bearingSmoothing: 0.08,
 };
 
 // ---- Journey ----
+// Speed is fixed at 0.1446 km/s (144.6 m/s) — the Eastern Corridor's
+// confirmed-good chase-camera speed. Duration is DERIVED from that
+// speed and this route's actual distance (861.64 km, computed from
+// the real route geometry below), per the formula:
+//   totalDurationSeconds = totalDistanceKm / 0.1446
+// Do not hand-tune this number — if the route geometry changes, this
+// must be recalculated from the new distance, not adjusted by feel.
 const JOURNEY = {
-  totalDurationSeconds: 600, // full Accra -> Sawla run (now ~850km via Yeji/Bimbila/Yendi), tune for pacing
+  speedKmPerSecond: 0.1446,
+  totalDurationSeconds: 5959, // 861.64 / 0.1446 = 5958.8s ≈ 99:19
 };
 
 // ---- Map style ----

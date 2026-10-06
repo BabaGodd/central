@@ -6,15 +6,8 @@
    Mapbox's own layer.
    ============================================================ */
 
-const CACHE_NAME = 'central-corridor-v4';
+const CACHE_NAME = 'central-corridor-v5';
 const APP_SHELL = [
-  './',
-  './index.html',
-  './style.css',
-  './splash.css',
-  './splash.js',
-  './app.js',
-  './config.js',
   './manifest.json',
   './grda-logo.png',
   './icons/icon-192.png',
@@ -53,7 +46,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for app shell files.
+  // Always fetch app code fresh so edits cannot be hidden by a stale cache.
+  if (/\.(html?|js|css)$/i.test(url.pathname)) {
+    event.respondWith(fetch(event.request, { cache: 'no-store' }));
+    return;
+  }
+
+  // Network-first for static app assets.
   event.respondWith(
     fetch(event.request)
       .then((response) => {

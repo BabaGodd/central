@@ -17,13 +17,6 @@ const map = new mapboxgl.Map({
   antialias: true,
 });
 
-map.on('error', (event) => {
-  const status = event.error && event.error.status;
-  if (status === 401 || status === 403) {
-    window.showSplashError('Mapbox rejected the token. Check its status and allowed domains.');
-  }
-});
-
 // ---------------------------------------------------------------
 // Route construction: stations + unlabeled shape points, smoothed
 // ---------------------------------------------------------------
@@ -68,139 +61,133 @@ const routeSegmentLines = ROUTE_SEGMENTS.map((seg) => {
 // ---------------------------------------------------------------
 // Elevation helper
 // ---------------------------------------------------------------
+const routeElevationCache = new Map();
+let lastKnownCameraElevation = 0;
+let lastKnownRouteElevation = null;
+let trainTerrainProfileActive = false;
+
 function getElevation(lngLat) {
   const el = map.queryTerrainElevation(lngLat, { exaggerated: false });
-  return el || 0;
+  if (Number.isFinite(el)) {
+    lastKnownCameraElevation = el;
+    return el;
+  }
+  return lastKnownCameraElevation;
+}
+
+function getRouteElevationBucket(bucket) {
+  const cached = routeElevationCache.get(bucket);
+  if (Number.isFinite(cached)) return cached;
+
+  const sampleDistanceKm = bucket / 100;
+  const sample = turf.along(fullRoute, sampleDistanceKm, { units: 'kilometers' }).geometry.coordinates;
+  const elevation = map.queryTerrainElevation(sample, { exaggerated: false });
+  if (Number.isFinite(elevation)) {
+    routeElevationCache.set(bucket, elevation);
+    lastKnownRouteElevation = elevation;
+    return elevation;
+  }
+
+  for (let offset = 1; offset <= 10; offset++) {
+    const before = routeElevationCache.get(bucket - offset);
+    const after = routeElevationCache.get(bucket + offset);
+    if (Number.isFinite(before) && Number.isFinite(after)) return (before + after) / 2;
+    if (Number.isFinite(before)) return before;
+    if (Number.isFinite(after)) return after;
+  }
+
+  return lastKnownRouteElevation;
+}
+
+function getRouteElevation(distanceKm) {
+  const clampedDistance = Math.max(0, Math.min(distanceKm, totalDistanceKm));
+  const bucketPosition = clampedDistance * 100;
+  const lowerBucket = Math.floor(bucketPosition);
+  const upperBucket = Math.ceil(bucketPosition);
+  const lowerElevation = getRouteElevationBucket(lowerBucket);
+  if (lowerBucket === upperBucket) return lowerElevation;
+
+  const upperElevation = getRouteElevationBucket(upperBucket);
+  if (Number.isFinite(lowerElevation) && Number.isFinite(upperElevation)) {
+    const fraction = bucketPosition - lowerBucket;
+    return lowerElevation + (upperElevation - lowerElevation) * fraction;
+  }
+  return Number.isFinite(lowerElevation) ? lowerElevation : upperElevation;
+}
+
+function getTrainGroundElevation(distanceKm) {
+  // Sample the full train footprint so small DEM bumps cannot clip its body.
+  const halfLengthKm = 0.04;
+  const sampleOffsetsKm = [-halfLengthKm, -halfLengthKm / 2, 0, halfLengthKm / 2, halfLengthKm];
+  const elevations = sampleOffsetsKm
+    .map((offset) => getRouteElevation(distanceKm + offset))
+    .filter(Number.isFinite);
+  if (!elevations.length) return null;
+  const highestElevation = Math.max(...elevations);
+  return highestElevation + 0.5;
 }
 
 // ---------------------------------------------------------------
-// Train visual — same approach as the Western Corridor build:
-// a canvas-drawn pictogram (badge + cab + windows + wheels + soft
-// halo) rendered through a native custom WebGL layer, so its
-// position is read straight from a JS variable at draw time with
-// zero worker/GeoJSON latency. Falls back to a GeoJSON point +
-// circle glow + icon symbol layer if the custom layer fails.
+// Chase camera — positions the free camera behind and above a target,
+// shared by the initial framing shot and the per-frame playback chase.
 // ---------------------------------------------------------------
-function trainCanvas() {
-  const c = document.createElement('canvas');
-  c.width = c.height = 192;
-  const x = c.getContext('2d');
-  const h = x.createRadialGradient(96, 96, 20, 96, 96, 96);
-  h.addColorStop(0, 'rgba(252,209,22,.45)');
-  h.addColorStop(1, 'rgba(252,209,22,0)');
-  x.fillStyle = h;
-  x.fillRect(0, 0, 192, 192);
-  x.translate(32, 32);
-  x.scale(2, 2);
-  const rr = (a, b, w, h2, r) => {
-    x.beginPath();
-    x.moveTo(a + r, b);
-    x.arcTo(a + w, b, a + w, b + h2, r);
-    x.arcTo(a + w, b + h2, a, b + h2, r);
-    x.arcTo(a, b + h2, a, b, r);
-    x.arcTo(a, b, a + w, b, r);
-    x.closePath();
-  };
-  x.beginPath();
-  x.arc(32, 32, 29.5, 0, 7);
-  x.fillStyle = '#fcd116';
-  x.fill();
-  x.lineWidth = 3;
-  x.strokeStyle = '#071018';
-  x.stroke();
-  x.fillStyle = '#071018';
-  rr(19, 13, 26, 31, 7);
-  x.fill();
-  x.fillStyle = '#fcd116';
-  rr(23, 18, 18, 11, 3);
-  x.fill();
-  x.beginPath();
-  x.arc(26, 37, 2.4, 0, 7);
-  x.arc(38, 37, 2.4, 0, 7);
-  x.fill();
-  x.strokeStyle = '#071018';
-  x.lineWidth = 3;
-  x.lineCap = 'round';
-  x.beginPath();
-  x.moveTo(25, 46);
-  x.lineTo(19, 54);
-  x.moveTo(39, 46);
-  x.lineTo(45, 54);
-  x.stroke();
-  return c;
+function positionChaseCamera(camLngLat, trainLngLat) {
+  const camAltitude = getElevation(camLngLat) + CAMERA.heightAboveGroundM;
+  const trainAltitude = getElevation(trainLngLat) + 2; // small lift so it doesn't clip into terrain
+
+  const camMerc = mapboxgl.MercatorCoordinate.fromLngLat(camLngLat, camAltitude);
+
+  const freeCam = map.getFreeCameraOptions();
+  freeCam.position = camMerc;
+  // lookAtPoint's real signature is (lngLat, upVector?, altitude?) — it
+  // does NOT take a MercatorCoordinate. Passing the plain coordinate
+  // plus the real altitude is what actually aims it at the train's true
+  // (terrain-elevated) position instead of sea level.
+  freeCam.lookAtPoint(trainLngLat, [0, 0, 1], trainAltitude);
+  map.setFreeCameraOptions(freeCam);
 }
 
-const trainLayer = {
-  id: 'train-gl',
-  type: 'custom',
-  renderingMode: '3d',
-  ok: false,
-  pos: null,
-  onAdd(m, gl) {
-    this.map = m;
-    const sh = (t, src) => {
-      const o = gl.createShader(t);
-      gl.shaderSource(o, src);
-      gl.compileShader(o);
-      if (!gl.getShaderParameter(o, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(o));
-      return o;
-    };
-    const pr = gl.createProgram();
-    gl.attachShader(pr, sh(gl.VERTEX_SHADER, 'uniform mat4 u_m;uniform vec3 u_p;uniform vec2 u_s;attribute vec2 a_c;varying vec2 v;void main(){vec4 c=u_m*vec4(u_p,1.0);c.xy+=a_c*u_s*c.w;v=vec2(a_c.x*.5+.5,.5-a_c.y*.5);gl_Position=c;}'));
-    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, 'precision mediump float;uniform sampler2D u_t;varying vec2 v;void main(){gl_FragColor=texture2D(u_t,v);}'));
-    gl.linkProgram(pr);
-    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error('train shader link failed');
-    this.pr = pr;
-    this.u = { m: gl.getUniformLocation(pr, 'u_m'), p: gl.getUniformLocation(pr, 'u_p'), s: gl.getUniformLocation(pr, 'u_s'), t: gl.getUniformLocation(pr, 'u_t') };
-    this.a = gl.getAttribLocation(pr, 'a_c');
-    this.buf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-    this.tex = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, trainCanvas());
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]].forEach((q) => gl.texParameteri(gl.TEXTURE_2D, q[0], q[1]));
-    this.ok = true;
-  },
-  render(gl, matrix) {
-    if (!this.ok || !this.pos) return;
-    const cv = this.map.getCanvas();
-    const sz = cv.clientWidth < 600 ? 84 : 104;
-    gl.useProgram(this.pr);
-    gl.disable(gl.DEPTH_TEST);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.uniformMatrix4fv(this.u.m, false, matrix);
-    gl.uniform3f(this.u.p, this.pos[0], this.pos[1], this.pos[2]);
-    gl.uniform2f(this.u.s, sz / cv.clientWidth, sz / cv.clientHeight);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.uniform1i(this.u.t, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
-    gl.enableVertexAttribArray(this.a);
-    gl.vertexAttribPointer(this.a, 2, gl.FLOAT, false, 0, 0);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.disableVertexAttribArray(this.a);
-    // Restore WebGL state. Mapbox GL JS does not reset context state
-    // between layers/frames — a custom layer is responsible for putting
-    // it back. Leaving DEPTH_TEST disabled here was the actual bug:
-    // it broke Mapbox's own terrain-draped satellite rendering on
-    // later frames (route lines and this custom layer kept drawing
-    // fine since they don't rely on depth testing against terrain,
-    // which is exactly why only the imagery disappeared).
-    gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-  },
-};
+// Heading (compass degrees, 0 = north) of travel at a given distance
+// along the route, from a short lookahead sample.
+function headingAt(distanceKm) {
+  const aheadKm = Math.min(distanceKm + 0.05, totalDistanceKm);
+  const behindKm = Math.max(distanceKm - 0.05, 0);
+  const a = turf.along(fullRoute, behindKm, { units: 'kilometers' }).geometry.coordinates;
+  const b = turf.along(fullRoute, aheadKm, { units: 'kilometers' }).geometry.coordinates;
+  return turf.bearing(a, b);
+}
 
-let useGL = false;
+// Chase camera point: behind the train along the route, offset
+// sideways from the direct chase line so the shot shows the train's
+// side/length and surrounding terrain, not just its back end.
+function chaseCameraPoint(trainLngLat, headingDeg) {
+  const behindPt = turf.destination(trainLngLat, CAMERA.chaseBehindKm, headingDeg + 180, { units: 'kilometers' });
+  const sidePt = turf.destination(behindPt, CAMERA.sideOffsetKm, headingDeg + 90, { units: 'kilometers' });
+  return sidePt.geometry.coordinates;
+}
+
+// Lateral recentering offset for the model's own position (its mesh
+// origin isn't centered on its width — see config.js MODEL notes).
+function centeredModelPosition(trainLngLat, headingDeg) {
+  return turf.destination(trainLngLat, MODEL.lateralOffsetM / 1000, headingDeg + 90, { units: 'kilometers' }).geometry.coordinates;
+}
 
 // ---------------------------------------------------------------
-// Map load
+// The native 3D model is the only train visual; the old canvas
+// billboard and custom WebGL layer have been removed.
 // ---------------------------------------------------------------
-map.on('load', () => {
+
+
+// ---------------------------------------------------------------
+// Map initialization
+// ---------------------------------------------------------------
+let mapInitialized = false;
+
+function initializeMap() {
+  if (mapInitialized) return;
+  mapInitialized = true;
+
+  try {
   // Terrain
   map.addSource('mapbox-dem', {
     type: 'raster-dem',
@@ -208,7 +195,7 @@ map.on('load', () => {
     tileSize: 512,
     maxzoom: 14,
   });
-  map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.25 });
+  map.setTerrain({ source: 'mapbox-dem', exaggeration: 1 });
 
   map.addLayer({
     id: 'sky-layer',
@@ -289,39 +276,42 @@ map.on('load', () => {
     },
   });
 
-  // Train — custom GL layer primary path, GeoJSON+icon fallback
-  try {
-    map.addLayer(trainLayer);
-    useGL = trainLayer.ok;
-  } catch (e) {
-    console.error('train GL layer failed, using fallback:', e.message);
-  }
-  if (!useGL) {
-    if (map.getLayer('train-gl')) map.removeLayer('train-gl');
-    map.addSource('train', { type: 'geojson', data: turf.point(fullRoute.geometry.coordinates[0]) });
-    map.addLayer({
-      id: 'train-glow',
-      type: 'circle',
-      source: 'train',
-      paint: { 'circle-radius': 28, 'circle-color': '#fcd116', 'circle-opacity': 0.3, 'circle-blur': 0.8 },
-    });
-    try {
-      map.addImage('train-icon', trainCanvas().getContext('2d').getImageData(0, 0, 192, 192), { pixelRatio: 2 });
-      map.addLayer({
-        id: 'train-core',
-        type: 'symbol',
-        source: 'train',
-        layout: { 'icon-image': 'train-icon', 'icon-allow-overlap': true, 'icon-ignore-placement': true },
-      });
-    } catch (e) {
-      map.addLayer({
-        id: 'train-core',
-        type: 'circle',
-        source: 'train',
-        paint: { 'circle-radius': 6, 'circle-color': '#fcd116', 'circle-stroke-color': '#071018', 'circle-stroke-width': 1.5 },
-      });
-    }
-  }
+  // ---------------------------------------------------------------
+  // Train — one native 3D model, updated along the route during playback.
+  // ---------------------------------------------------------------
+  const initialHeading = headingAt(0);
+  map.addSource('train-model-source', {
+    type: 'model',
+    models: {
+      'ghana-freight-train': {
+        uri: MODEL.uri,
+        position: centeredModelPosition([STATIONS[0].lng, STATIONS[0].lat], initialHeading),
+        // No roll: this model's own bounding box (Y=height 5.1m, Z=length
+        // 80.1m) confirms it's already flat at identity rotation, since
+        // Mapbox's model source maps local Y to world "up" by default.
+        // The 90° roll from the Eastern Corridor notes was for a model
+        // with a different local axis layout — applying it here was
+        // exactly what tipped this train upright.
+        orientation: [0, 0, initialHeading + MODEL.bearingOffsetDeg],
+      },
+    },
+  });
+  map.addLayer({
+    id: 'train-model-layer',
+    type: 'model',
+    source: 'train-model-source',
+    paint: {
+      'model-scale': MODEL.scale,
+      // Follow terrain until usable DEM samples are available, then use
+      // the smoothed route profile instead of terrain-derived model tilt.
+      'model-elevation-reference': 'ground',
+    },
+  });
+
+  // Frame the train at Accra before the initial playback frame.
+  const staticTrainPt = [STATIONS[0].lng, STATIONS[0].lat];
+  const staticCamPt = chaseCameraPoint(staticTrainPt, initialHeading);
+  positionChaseCamera(staticCamPt, staticTrainPt);
 
   // HUD static fields
   document.getElementById('routeOrigin').textContent = STATIONS[0].name;
@@ -333,7 +323,17 @@ map.on('load', () => {
 
   hideSplashScreen();
   Playback.start();
-});
+  } catch (error) {
+    mapInitialized = false;
+    console.error('Map initialization failed:', error);
+    window.showSplashError(`Map initialization failed: ${error.message || error}`);
+  }
+}
+
+map.once('style.load', initializeMap);
+if (map.isStyleLoaded()) {
+  setTimeout(initializeMap, 0);
+}
 
 // ---------------------------------------------------------------
 // Playback / animation
@@ -383,33 +383,32 @@ const Playback = (() => {
     const distanceKm = fraction * totalDistanceKm;
 
     const trainLngLat = turf.along(fullRoute, distanceKm, { units: 'kilometers' }).geometry.coordinates;
+    const headingDeg = headingAt(distanceKm);
 
-    // Update train visual — GL layer position, or GeoJSON fallback
-    if (useGL) {
-      const gt = map.queryTerrainElevation(trainLngLat);
-      const tz = gt != null ? gt : getElevation(trainLngLat);
-      const mc = mapboxgl.MercatorCoordinate.fromLngLat(trainLngLat, tz + 2);
-      trainLayer.pos = [mc.x, mc.y, mc.z];
-      map.triggerRepaint();
-    } else {
-      map.getSource('train').setData(turf.point(trainLngLat));
+    // Update the model position and heading for this route frame.
+    const modelSource = map.getSource('train-model-source');
+    if (modelSource) {
+      modelSource.setModels({
+        'ghana-freight-train': {
+          uri: MODEL.uri,
+          position: centeredModelPosition(trainLngLat, headingDeg),
+          orientation: [0, 0, headingDeg + MODEL.bearingOffsetDeg],
+        },
+      });
+    }
+    const trainGroundElevation = getTrainGroundElevation(distanceKm);
+    if (Number.isFinite(trainGroundElevation)) {
+      if (!trainTerrainProfileActive) {
+        map.setPaintProperty('train-model-layer', 'model-elevation-reference', 'sea');
+        trainTerrainProfileActive = true;
+      }
+      map.setPaintProperty('train-model-layer', 'model-translation', [0, 0, trainGroundElevation]);
     }
 
-    // Chase camera — real km offset behind the train, terrain-relative height
-    const camDistanceKm = Math.max(0, distanceKm - CAMERA.chaseBehindKm);
-    const camPt = turf.along(fullRoute, camDistanceKm, { units: 'kilometers' });
-    const camLngLat = camPt.geometry.coordinates;
-
-    const camAltitude = getElevation(camLngLat) + CAMERA.heightAboveTerrainM;
-    const trainAltitude = getElevation(trainLngLat) + 8;
-
-    const camMerc = mapboxgl.MercatorCoordinate.fromLngLat(camLngLat, camAltitude);
-    const trainMerc = mapboxgl.MercatorCoordinate.fromLngLat(trainLngLat, trainAltitude);
-
-    const freeCam = map.getFreeCameraOptions();
-    freeCam.position = camMerc;
-    freeCam.lookAtPoint(trainLngLat);
-    map.setFreeCameraOptions(freeCam);
+    // Chase camera — offset behind AND to the side of the train, so the
+    // shot shows its length/profile plus terrain, not just its back end.
+    const camLngLat = chaseCameraPoint(trainLngLat, headingDeg);
+    positionChaseCamera(camLngLat, trainLngLat);
 
     updateHUD(distanceKm, fraction);
 
@@ -471,3 +470,12 @@ function onArrival() {
 document.getElementById('btnPlayPause').addEventListener('click', () => Playback.toggle());
 document.getElementById('btnRestart').addEventListener('click', () => Playback.restart());
 document.getElementById('btnArrivalRestart').addEventListener('click', () => Playback.restart());
+
+// ---------------------------------------------------------------
+// PWA service worker
+// ---------------------------------------------------------------
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}

@@ -43,3 +43,7 @@ Yeji → Bimbila → Yendi → Sawla**.
 - `splash.css` / `splash.js` — loading screen
 - `manifest.json` / `sw.js` / `icons/` — PWA
 - `grda-logo.png` — cropped circular GRDA seal
+
+The service worker caches static assets only. HTML, JavaScript, and CSS are
+always fetched fresh, so code changes appear on reload instead of being served
+from a stale application cache.

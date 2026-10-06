@@ -1,7 +1,7 @@
 /* ============================================================
    SPLASH SCREEN CONTROLLER
    Rotates status messages tied to real load progress and exposes
-   a global hideSplashScreen() called once the map's 'load' event
+   a global hideSplashScreen() called once the map style is initialized
    fires (after terrain/route/train are all initialized).
    ============================================================ */
 
@@ -50,9 +50,12 @@
   window.showSplashError = function (message) {
     if (hasError) return;
     hasError = true;
+    clearTimeout(loadTimeout);
     statusEl.textContent = message;
     statusEl.style.opacity = 1;
+    splashEl.classList.remove('hidden');
     splashEl.classList.add('has-error');
+    document.getElementById('app').classList.remove('ready');
   };
 
   window.hideSplashScreen = function () {

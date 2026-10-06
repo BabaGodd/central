@@ -118,9 +118,18 @@
 <script src="config.js"></script>
 <script src="splash.js"></script>
 <script>
+  window.addEventListener('error', (event) => {
+    window.showSplashError(`Application error: ${event.message || 'Check the browser console.'}`);
+  });
+  window.addEventListener('unhandledrejection', (event) => {
+    const reason = event.reason;
+    window.showSplashError(`Application error: ${reason && reason.message ? reason.message : reason || 'Check the browser console.'}`);
+  });
+
   if (MAPBOX_TOKEN) {
     const appScript = document.createElement('script');
     appScript.src = 'app.js';
+    appScript.onerror = () => window.showSplashError('Could not load app.js. Check the project files and reload.');
     document.body.appendChild(appScript);
   } else {
     window.showSplashError('Mapbox token is missing. Add config.local.js to the deployment.');
