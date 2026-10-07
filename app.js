@@ -548,12 +548,3 @@ document.getElementById('btnArrivalRestart').addEventListener('click', () => Pla
   window.addEventListener('touchmove', moveDrag, { passive: false });
   window.addEventListener('touchend', endDrag);
 })();
-
-// ---------------------------------------------------------------
-// PWA service worker
-// ---------------------------------------------------------------
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
-  });
-}

@@ -6,7 +6,7 @@
    Mapbox's own layer.
    ============================================================ */
 
-const CACHE_NAME = 'central-corridor-v5';
+const CACHE_NAME = 'central-corridor-v6';
 const APP_SHELL = [
   './manifest.json',
   './grda-logo.png',
@@ -46,8 +46,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Always fetch app code fresh so edits cannot be hidden by a stale cache.
-  if (/\.(html?|js|css)$/i.test(url.pathname)) {
+  // Always fetch navigations (including the site's root URL) and app code fresh.
+  if (event.request.mode === 'navigate' || /\.(html?|js|css)$/i.test(url.pathname)) {
     event.respondWith(fetch(event.request, { cache: 'no-store' }));
     return;
   }
