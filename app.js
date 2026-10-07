@@ -157,13 +157,14 @@ function headingAt(distanceKm) {
   return turf.bearing(a, b);
 }
 
-// Chase camera point: behind the train along the route, offset
-// sideways from the direct chase line so the shot shows the train's
-// side/length and surrounding terrain, not just its back end.
+// Chase camera point: directly behind the train along the route.
 function chaseCameraPoint(trainLngLat, headingDeg) {
-  const behindPt = turf.destination(trainLngLat, CAMERA.chaseBehindKm, headingDeg + 180, { units: 'kilometers' });
-  const sidePt = turf.destination(behindPt, CAMERA.sideOffsetKm, headingDeg + 90, { units: 'kilometers' });
-  return sidePt.geometry.coordinates;
+  return turf.destination(
+    trainLngLat,
+    CAMERA.chaseBehindKm,
+    headingDeg + 180,
+    { units: 'kilometers' }
+  ).geometry.coordinates;
 }
 
 // Lateral recentering offset for the model's own position (its mesh
@@ -406,8 +407,7 @@ const Playback = (() => {
       map.setPaintProperty('train-model-layer', 'model-translation', [0, 0, trainGroundElevation]);
     }
 
-    // Chase camera — offset behind AND to the side of the train, so the
-    // shot shows its length/profile plus terrain, not just its back end.
+    // Keep the camera centered behind the train and above the terrain.
     const camLngLat = chaseCameraPoint(trainLngLat, headingDeg);
     positionChaseCamera(camLngLat, trainLngLat);
 

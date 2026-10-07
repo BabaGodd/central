@@ -114,13 +114,8 @@ const MODEL = {
 
 // ---- Camera ----
 const CAMERA = {
-  chaseBehindKm: 0.16,        // keep enough distance to frame the full 80m train
-  heightAboveGroundM: 50,     // raise the chase view to show the train's full length
-  // Sideways offset from a pure rear-chase position, so the shot shows
-  // the train's side/length plus surrounding terrain rather than just
-  // staring straight down the track at its back end. ~70m sideways at
-  // ~160m behind gives a three-quarter angle. Tune by feel.
-  sideOffsetKm: 0.07,
+  chaseBehindKm: 0.18,        // keep the camera slightly farther behind the 80m train
+  heightAboveGroundM: 120,    // elevated bird-like view following directly behind the train
   cameraSmoothing: 0.08,      // Eastern Corridor's confirmed-good value (not yet wired in — see app.js note)
   pitch: 68,
 };
