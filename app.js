@@ -322,7 +322,8 @@ function initializeMap() {
   document.getElementById('timeTotal').textContent = formatTime(JOURNEY.totalDurationSeconds);
 
   hideSplashScreen();
-  Playback.start();
+  // Intentionally NOT auto-starting: the page should load paused, with
+  // the train stationary at Accra, until the user presses Play.
   } catch (error) {
     mapInitialized = false;
     console.error('Map initialization failed:', error);
@@ -375,14 +376,11 @@ const Playback = (() => {
     document.getElementById('progressFill').style.width = (fraction * 100) + '%';
   }
 
-  function frame(now) {
-    if (!playing) return;
-    if (lastFrameTime === null) lastFrameTime = now;
-    const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
-    lastFrameTime = now;
-    elapsed = Math.min(elapsed + dt, JOURNEY.totalDurationSeconds);
-
-    const fraction = elapsed / JOURNEY.totalDurationSeconds;
+  // Renders the model/camera/HUD for a given elapsed time. Shared by the
+  // normal playback loop and seek() (scrubbing), so dragging the progress
+  // bar updates the exact same things, whether playing or paused.
+  function renderAt(elapsedSeconds) {
+    const fraction = Math.min(elapsedSeconds / JOURNEY.totalDurationSeconds, 1);
     const distanceKm = fraction * totalDistanceKm;
 
     const trainLngLat = turf.along(fullRoute, distanceKm, { units: 'kilometers' }).geometry.coordinates;
@@ -414,6 +412,17 @@ const Playback = (() => {
     positionChaseCamera(camLngLat, trainLngLat);
 
     updateHUD(distanceKm, fraction);
+    return fraction;
+  }
+
+  function frame(now) {
+    if (!playing) return;
+    if (lastFrameTime === null) lastFrameTime = now;
+    const dt = Math.min((now - lastFrameTime) / 1000, 0.1);
+    lastFrameTime = now;
+    elapsed = Math.min(elapsed + dt, JOURNEY.totalDurationSeconds);
+
+    const fraction = renderAt(elapsed);
 
     if (fraction >= 1 && !arrived) {
       arrived = true;
@@ -453,7 +462,27 @@ const Playback = (() => {
     start();
   }
 
-  return { start, pause, toggle, restart, get playing() { return playing; } };
+  // Scrub to an arbitrary point in the journey (0 to 1). Works whether
+  // paused or playing — renders immediately so dragging feels live.
+  function seek(fraction) {
+    const clamped = Math.max(0, Math.min(1, fraction));
+    elapsed = clamped * JOURNEY.totalDurationSeconds;
+    lastFrameTime = null; // avoid a big dt jump on the next playing frame
+
+    if (clamped < 1 && arrived) {
+      arrived = false;
+      document.getElementById('arrivalPanel').classList.remove('show');
+      document.getElementById('routeStatus').textContent = 'En Route';
+    }
+
+    const renderedFraction = renderAt(elapsed);
+    if (renderedFraction >= 1 && !arrived) {
+      arrived = true;
+      onArrival();
+    }
+  }
+
+  return { start, pause, toggle, restart, seek, get playing() { return playing; } };
 })();
 
 function setPlayIcon(isPlaying) {
@@ -473,6 +502,52 @@ function onArrival() {
 document.getElementById('btnPlayPause').addEventListener('click', () => Playback.toggle());
 document.getElementById('btnRestart').addEventListener('click', () => Playback.restart());
 document.getElementById('btnArrivalRestart').addEventListener('click', () => Playback.restart());
+
+// Progress bar — click or drag anywhere on it to jump to that point in
+// the journey. Pauses while actively dragging, resumes afterward only
+// if it was already playing.
+(function setupSeekBar() {
+  const track = document.getElementById('progressTrack');
+  if (!track) return; // index.html needs id="progressTrack" on .progress-track
+  track.style.cursor = 'pointer';
+  track.style.touchAction = 'none';
+
+  function fractionFromEvent(evt) {
+    const rect = track.getBoundingClientRect();
+    const point = evt.touches ? evt.touches[0] : evt;
+    const x = Math.max(rect.left, Math.min(point.clientX, rect.right));
+    return (x - rect.left) / rect.width;
+  }
+
+  let dragging = false;
+  let wasPlaying = false;
+
+  function startDrag(evt) {
+    dragging = true;
+    wasPlaying = Playback.playing;
+    Playback.pause();
+    Playback.seek(fractionFromEvent(evt));
+    evt.preventDefault();
+  }
+  function moveDrag(evt) {
+    if (!dragging) return;
+    Playback.seek(fractionFromEvent(evt));
+    evt.preventDefault();
+  }
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false;
+    if (wasPlaying) Playback.start();
+  }
+
+  track.addEventListener('mousedown', startDrag);
+  window.addEventListener('mousemove', moveDrag);
+  window.addEventListener('mouseup', endDrag);
+
+  track.addEventListener('touchstart', startDrag, { passive: false });
+  window.addEventListener('touchmove', moveDrag, { passive: false });
+  window.addEventListener('touchend', endDrag);
+})();
 
 // ---------------------------------------------------------------
 // PWA service worker
