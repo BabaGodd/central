@@ -450,12 +450,27 @@ function initializeMap() {
     maxzoom: 14,
   });
   map.setTerrain({ source: 'mapbox-dem', exaggeration: 1 });
-  // Explicitly disable fog/atmospheric haze. Classic styles like
-  // satellite-streets-v12 don't define fog by default and nothing else
-  // in this file calls setFog(), so this is normally a no-op — but it
-  // forces fog off regardless of what any other script/session may have
-  // set, rather than leaving it to chance.
-  map.setFog(null);
+  // Bright, clear-morning sky — not nulled, not heavy haze. Fully
+  // disabling fog (an earlier attempt, map.setFog(null)) removed the
+  // only thing giving the space beyond the terrain a sky color at all,
+  // which is why it rendered as a flat dark "night" void instead of a
+  // bright one. horizon-blend kept low so it still reads as clear, not
+  // foggy/hazy.
+  map.setFog({
+    'color': '#eaf4ff',
+    'high-color': '#bcdcff',
+    'horizon-blend': 0.02,
+    'space-color': '#bcdcff',
+    'star-intensity': 0,
+  });
+  map.addLayer({
+    id: 'sky-layer',
+    type: 'sky',
+    paint: {
+      'sky-type': 'atmosphere',
+      'sky-atmosphere-sun-intensity': 10,
+    },
+  });
   for (const sourceId of requiredRasterSourceIds(map)) mainCoverageSources.add(sourceId);
 
   // Route lines — one glow+line layer pair per segment, styled solid
