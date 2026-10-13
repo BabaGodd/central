@@ -7,6 +7,13 @@ mapboxgl.accessToken = MAPBOX_TOKEN;
 
 const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+function tileCacheLimit(container) {
+  const columns = Math.ceil(container.clientWidth / PRELOAD.tileSizePx) + 2;
+  const rows = Math.ceil(container.clientHeight / PRELOAD.tileSizePx) + 2;
+  const viewportTiles = columns * rows * PRELOAD.cacheViewportMultiplier;
+  return Math.min(PRELOAD.maxCachedTilesPerSource, Math.max(16, viewportTiles));
+}
+
 const map = new mapboxgl.Map({
   container: 'map',
   style: MAP_STYLE,
@@ -15,7 +22,24 @@ const map = new mapboxgl.Map({
   pitch: CAMERA.pitch,
   bearing: 0,
   antialias: true,
+  maxTileCacheSize: tileCacheLimit(document.getElementById('map')),
 });
+
+const mainMapErrors = [];
+const mainCoverageSources = new Set();
+let mapInitialized = false;
+function captureMainMapError(event) {
+  if (mainMapErrors.length < 100) mainMapErrors.push(event);
+  if (!mapInitialized && event.error) {
+    window.showSplashError(`Map initialization failed: ${event.error.message || 'Map style request failed.'} Check connectivity and retry.`);
+  }
+}
+map.on('error', captureMainMapError);
+const initialStyleTimeout = setTimeout(() => {
+  if (!mapInitialized) {
+    window.showSplashError('Map style did not load. Check connectivity and Mapbox access, then retry.');
+  }
+}, PRELOAD.viewportTimeoutMs);
 
 // ---------------------------------------------------------------
 // Route construction: stations + unlabeled shape points, smoothed
@@ -34,6 +58,11 @@ function buildRawCoordinates() {
 const rawLine = turf.lineString(buildRawCoordinates());
 const fullRoute = turf.bezierSpline(rawLine, { sharpness: 0.82, resolution: 12000 });
 const totalDistanceKm = turf.length(fullRoute, { units: 'kilometers' });
+
+function routeCoordinateAt(distanceKm) {
+  const distance = Math.max(0, Math.min(distanceKm, totalDistanceKm));
+  return turf.along(fullRoute, distance, { units: 'kilometers' }).geometry.coordinates;
+}
 
 // Distance-along-route for every station (for HUD + segment slicing)
 const stationById = {};
@@ -61,90 +90,34 @@ const routeSegmentLines = ROUTE_SEGMENTS.map((seg) => {
 // ---------------------------------------------------------------
 // Elevation helper
 // ---------------------------------------------------------------
-const routeElevationCache = new Map();
-let lastKnownCameraElevation = 0;
-let lastKnownRouteElevation = null;
-let trainTerrainProfileActive = false;
-
-function getElevation(lngLat) {
-  const el = map.queryTerrainElevation(lngLat, { exaggerated: false });
-  if (Number.isFinite(el)) {
-    lastKnownCameraElevation = el;
-    return el;
-  }
-  return lastKnownCameraElevation;
-}
-
-function getRouteElevationBucket(bucket) {
-  const cached = routeElevationCache.get(bucket);
-  if (Number.isFinite(cached)) return cached;
-
-  const sampleDistanceKm = bucket / 100;
-  const sample = turf.along(fullRoute, sampleDistanceKm, { units: 'kilometers' }).geometry.coordinates;
-  const elevation = map.queryTerrainElevation(sample, { exaggerated: false });
-  if (Number.isFinite(elevation)) {
-    routeElevationCache.set(bucket, elevation);
-    lastKnownRouteElevation = elevation;
-    return elevation;
-  }
-
-  for (let offset = 1; offset <= 10; offset++) {
-    const before = routeElevationCache.get(bucket - offset);
-    const after = routeElevationCache.get(bucket + offset);
-    if (Number.isFinite(before) && Number.isFinite(after)) return (before + after) / 2;
-    if (Number.isFinite(before)) return before;
-    if (Number.isFinite(after)) return after;
-  }
-
-  return lastKnownRouteElevation;
-}
-
-function getRouteElevation(distanceKm) {
-  const clampedDistance = Math.max(0, Math.min(distanceKm, totalDistanceKm));
-  const bucketPosition = clampedDistance * 100;
-  const lowerBucket = Math.floor(bucketPosition);
-  const upperBucket = Math.ceil(bucketPosition);
-  const lowerElevation = getRouteElevationBucket(lowerBucket);
-  if (lowerBucket === upperBucket) return lowerElevation;
-
-  const upperElevation = getRouteElevationBucket(upperBucket);
-  if (Number.isFinite(lowerElevation) && Number.isFinite(upperElevation)) {
-    const fraction = bucketPosition - lowerBucket;
-    return lowerElevation + (upperElevation - lowerElevation) * fraction;
-  }
-  return Number.isFinite(lowerElevation) ? lowerElevation : upperElevation;
-}
-
-function getTrainGroundElevation(distanceKm) {
-  // Sample the full train footprint so small DEM bumps cannot clip its body.
-  const halfLengthKm = 0.04;
-  const sampleOffsetsKm = [-halfLengthKm, -halfLengthKm / 2, 0, halfLengthKm / 2, halfLengthKm];
-  const elevations = sampleOffsetsKm
-    .map((offset) => getRouteElevation(distanceKm + offset))
-    .filter(Number.isFinite);
-  if (!elevations.length) return null;
-  const highestElevation = Math.max(...elevations);
-  return highestElevation + 0.5;
+function terrainElevationAt(targetMap, lngLat, fallbackElevation = 0) {
+  const elevation = targetMap.queryTerrainElevation(lngLat, { exaggerated: false });
+  return Number.isFinite(elevation) ? elevation : fallbackElevation;
 }
 
 // ---------------------------------------------------------------
 // Chase camera — positions the free camera behind and above a target,
 // shared by the initial framing shot and the per-frame playback chase.
 // ---------------------------------------------------------------
-function positionChaseCamera(camLngLat, trainLngLat) {
-  const camAltitude = getElevation(camLngLat) + CAMERA.heightAboveGroundM;
-  const trainAltitude = getElevation(trainLngLat) + 2; // small lift so it doesn't clip into terrain
+function positionChaseCamera(targetMap, camLngLat, trainLngLat, headingDeg, fallbackElevation = 0) {
+  const camAltitude = terrainElevationAt(targetMap, camLngLat, fallbackElevation) + CAMERA.heightAboveGroundM;
+  const lookAheadPoint = turf.destination(
+    trainLngLat,
+    CAMERA.lookAheadKm,
+    headingDeg,
+    { units: 'kilometers' },
+  ).geometry.coordinates;
+  const lookAheadAltitude = terrainElevationAt(targetMap, lookAheadPoint, fallbackElevation) + 2;
 
   const camMerc = mapboxgl.MercatorCoordinate.fromLngLat(camLngLat, camAltitude);
 
-  const freeCam = map.getFreeCameraOptions();
+  const freeCam = targetMap.getFreeCameraOptions();
   freeCam.position = camMerc;
   // lookAtPoint's real signature is (lngLat, upVector?, altitude?) — it
-  // does NOT take a MercatorCoordinate. Passing the plain coordinate
-  // plus the real altitude is what actually aims it at the train's true
-  // (terrain-elevated) position instead of sea level.
-  freeCam.lookAtPoint(trainLngLat, [0, 0, 1], trainAltitude);
-  map.setFreeCameraOptions(freeCam);
+  // does NOT take a MercatorCoordinate. Aim beyond the train to reveal more
+  // of the route ahead instead of centering the train in the view.
+  freeCam.lookAtPoint(lookAheadPoint, [0, 0, 1], lookAheadAltitude);
+  targetMap.setFreeCameraOptions(freeCam);
 }
 
 // Heading (compass degrees, 0 = north) of travel at a given distance
@@ -152,8 +125,8 @@ function positionChaseCamera(camLngLat, trainLngLat) {
 function headingAt(distanceKm) {
   const aheadKm = Math.min(distanceKm + 0.05, totalDistanceKm);
   const behindKm = Math.max(distanceKm - 0.05, 0);
-  const a = turf.along(fullRoute, behindKm, { units: 'kilometers' }).geometry.coordinates;
-  const b = turf.along(fullRoute, aheadKm, { units: 'kilometers' }).geometry.coordinates;
+  const a = routeCoordinateAt(behindKm);
+  const b = routeCoordinateAt(aheadKm);
   return turf.bearing(a, b);
 }
 
@@ -167,10 +140,291 @@ function chaseCameraPoint(trainLngLat, headingDeg) {
   ).geometry.coordinates;
 }
 
-// Lateral recentering offset for the model's own position (its mesh
-// origin isn't centered on its width — see config.js MODEL notes).
-function centeredModelPosition(trainLngLat, headingDeg) {
-  return turf.destination(trainLngLat, MODEL.lateralOffsetM / 1000, headingDeg + 90, { units: 'kilometers' }).geometry.coordinates;
+let modelTerrainPose = {
+  pitchDegrees: 0,
+  verticalOffsetMeters: MODEL.groundClearanceMeters,
+};
+let lastModelGroundSampleTime = -Infinity;
+
+function modelTerrainPoseAt(trainLngLat, headingDeg, forceRefresh = false) {
+  const now = performance.now();
+  if (!forceRefresh && now - lastModelGroundSampleTime < 100) return modelTerrainPose;
+  lastModelGroundSampleTime = now;
+
+  const routeElevation = map.queryTerrainElevation(trainLngLat, { exaggerated: false });
+  if (!Number.isFinite(routeElevation)) return modelTerrainPose;
+
+  const footprintLength = MODEL.terrainFootprintAheadMeters + MODEL.terrainFootprintBehindMeters;
+  const sampleCount = Math.ceil(footprintLength / MODEL.terrainSampleSpacingMeters);
+  const terrainProfile = [];
+
+  for (let index = 0; index <= sampleCount; index++) {
+    const offsetMeters = -MODEL.terrainFootprintAheadMeters +
+      footprintLength * index / sampleCount;
+    const probePoint = turf.destination(
+      trainLngLat,
+      Math.abs(offsetMeters) / 1000,
+      headingDeg + (offsetMeters >= 0 ? 180 : 0),
+      { units: 'kilometers' },
+    ).geometry.coordinates;
+    const elevation = map.queryTerrainElevation(probePoint, { exaggerated: false });
+    if (!Number.isFinite(elevation)) return modelTerrainPose;
+    terrainProfile.push({ offsetMeters, elevation });
+  }
+
+  const slopeNumerator = terrainProfile.reduce((sum, sample) => {
+    return sum + sample.offsetMeters * (sample.elevation - routeElevation);
+  }, 0);
+  const slopeDenominator = terrainProfile.reduce((sum, sample) => {
+    return sum + sample.offsetMeters * sample.offsetMeters;
+  }, 0);
+  const maxPitchRadians = MODEL.maxTerrainPitchDegrees * Math.PI / 180;
+  const slope = Math.max(
+    -Math.tan(maxPitchRadians),
+    Math.min(Math.tan(maxPitchRadians), slopeNumerator / slopeDenominator),
+  );
+  const pitchDegrees = Math.atan(slope) * 180 / Math.PI;
+  const highestResidual = terrainProfile.reduce((highest, sample) => {
+    const residual = sample.elevation - (routeElevation + slope * sample.offsetMeters);
+    return Math.max(highest, residual);
+  }, 0);
+
+  modelTerrainPose = {
+    pitchDegrees,
+    verticalOffsetMeters: MODEL.groundClearanceMeters + highestResidual,
+  };
+  return modelTerrainPose;
+}
+
+function trainFeatureAt(distanceKm, forceTerrainRefresh = false) {
+  const coordinates = routeCoordinateAt(distanceKm);
+  const headingDeg = headingAt(distanceKm);
+  const terrainPose = modelTerrainPoseAt(coordinates, headingDeg, forceTerrainRefresh);
+  return {
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates },
+    properties: {
+      modelRotation: [
+        terrainPose.pitchDegrees,
+        0,
+        headingDeg + MODEL.bearingOffsetDeg,
+      ],
+      modelTranslation: [0, 0, terrainPose.verticalOffsetMeters],
+    },
+  };
+}
+
+function requiredRasterSourceIds(targetMap) {
+  const sources = targetMap.getStyle().sources || {};
+  return new Set(Object.keys(sources).filter((id) => {
+    return sources[id].type === 'raster' || sources[id].type === 'raster-dem';
+  }));
+}
+
+function throwOnCoverageErrors(errors, sourceIds) {
+  const failure = errors.find((event) => sourceIds.has(event.sourceId));
+  if (failure) {
+    const status = failure.error && (failure.error.status || failure.error.statusCode);
+    const detail = status
+      ? `HTTP ${status}`
+      : failure.error && failure.error.message ? failure.error.message : 'tile request failed';
+    throw new Error(`Required terrain or satellite imagery failed to load (${failure.sourceId}): ${detail}`);
+  }
+}
+
+function waitForMapStyle(targetMap, timeoutMs) {
+  if (targetMap.isStyleLoaded()) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      targetMap.off('style.load', onStyleLoad);
+      reject(new Error('Map style did not finish loading before the preload timeout.'));
+    }, timeoutMs);
+    function onStyleLoad() {
+      clearTimeout(timeout);
+      resolve();
+    }
+    targetMap.once('style.load', onStyleLoad);
+  });
+}
+
+function waitForMapSettled(targetMap, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    let rendered = false;
+    let checking = false;
+    let finished = false;
+    const timeout = setTimeout(() => finish(new Error('Map tiles did not settle before the viewport timeout.')), timeoutMs);
+
+    function finish(error) {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      targetMap.off('render', onRender);
+      targetMap.off('idle', check);
+      if (error) reject(error);
+      else resolve();
+    }
+
+    function verifyAfterRender() {
+      checking = false;
+      if (targetMap.isStyleLoaded() && targetMap.areTilesLoaded()) finish();
+      else check();
+    }
+
+    function check() {
+      if (finished || checking || !rendered) return;
+      if (!targetMap.isStyleLoaded() || !targetMap.areTilesLoaded()) return;
+      checking = true;
+      requestAnimationFrame(() => requestAnimationFrame(verifyAfterRender));
+    }
+
+    function onRender() {
+      rendered = true;
+      check();
+    }
+
+    targetMap.on('render', onRender);
+    targetMap.on('idle', check);
+    targetMap.triggerRepaint();
+  });
+}
+
+function remainingPreloadTime(deadline) {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) throw new Error('The route terrain and imagery preload exceeded its time budget.');
+  return Math.min(remaining, PRELOAD.viewportTimeoutMs);
+}
+
+async function preloadRouteCoverage() {
+  const deadline = Date.now() + PRELOAD.totalTimeoutMs;
+  const currentStyle = map.getStyle();
+  const imagerySources = Object.entries(currentStyle.sources || {}).filter(([, source]) => {
+    return source.type === 'raster';
+  });
+  if (!imagerySources.length) {
+    throw new Error('The current map style has no raster imagery source to preload.');
+  }
+  const preloadStyle = {
+    version: 8,
+    sources: Object.fromEntries(imagerySources),
+    layers: imagerySources.map(([sourceId]) => ({
+      id: `preload-${sourceId}`,
+      type: 'raster',
+      source: sourceId,
+    })),
+  };
+  const [minLng, minLat, maxLng, maxLat] = turf.bbox(fullRoute);
+  const width = Math.max(320, map.getCanvas().clientWidth);
+  const height = Math.max(240, map.getCanvas().clientHeight);
+  const container = document.createElement('div');
+  container.setAttribute('aria-hidden', 'true');
+  Object.assign(container.style, {
+    position: 'fixed',
+    left: '-100000px',
+    top: '0',
+    width: `${width}px`,
+    height: `${height}px`,
+    visibility: 'hidden',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(container);
+
+  let preloadMap;
+  const errors = [];
+  const requiredSources = new Set();
+  const observedTiles = new Set();
+  const onPreloadError = (event) => {
+    if (errors.length < PRELOAD.maxUniqueTiles) errors.push(event);
+  };
+
+  try {
+    preloadMap = new mapboxgl.Map({
+      container,
+      style: preloadStyle,
+      center: routeCoordinateAt(totalDistanceKm / 2),
+      zoom: 3,
+      pitch: 0,
+      bearing: 0,
+      interactive: false,
+      attributionControl: false,
+      antialias: true,
+      maxTileCacheSize: tileCacheLimit(container),
+    });
+    preloadMap.on('error', onPreloadError);
+    window.updateSplashProgress(2, 'Preparing route-wide base terrain and imagery…');
+    await waitForMapStyle(preloadMap, remainingPreloadTime(deadline));
+
+    for (const sourceId of requiredRasterSourceIds(preloadMap)) requiredSources.add(sourceId);
+    preloadMap.addSource('preload-terrain', {
+      type: 'raster-dem',
+      url: TERRAIN_SOURCE_URL,
+      tileSize: 512,
+      maxzoom: 14,
+    });
+    requiredSources.add('preload-terrain');
+    preloadMap.setTerrain({ source: 'preload-terrain', exaggeration: 1 });
+
+    preloadMap.on('sourcedata', (event) => {
+      if (!requiredSources.has(event.sourceId) || !event.coord) return;
+      const coord = event.coord;
+      const canonical = coord.canonical || coord;
+      observedTiles.add(`${event.sourceId}:${canonical.z}/${canonical.x}/${canonical.y}`);
+    });
+
+    const paddingPx = Math.ceil(Math.min(width, height) * PRELOAD.routePaddingRatio);
+    preloadMap.fitBounds(
+      [[minLng, minLat], [maxLng, maxLat]],
+      {
+        padding: {
+          top: paddingPx,
+          right: paddingPx,
+          bottom: paddingPx,
+          left: paddingPx,
+        },
+        duration: 0,
+      },
+    );
+    await waitForMapSettled(preloadMap, remainingPreloadTime(deadline));
+    throwOnCoverageErrors(errors, requiredSources);
+
+    const sampleDistances = new Set(
+      Array.from({ length: PRELOAD.routeElevationSampleCount }, (_, index) => {
+        return totalDistanceKm * index / (PRELOAD.routeElevationSampleCount - 1);
+      }),
+    );
+    STATIONS.forEach((station) => sampleDistances.add(station.distanceKm));
+    const sortedSamples = [...sampleDistances].sort((a, b) => a - b);
+    for (let index = 0; index < sortedSamples.length; index++) {
+      const distanceKm = sortedSamples[index];
+      const point = routeCoordinateAt(distanceKm);
+      const elevation = preloadMap.queryTerrainElevation(point, { exaggerated: false });
+      if (!Number.isFinite(elevation)) {
+        throw new Error(`Base terrain elevation is unavailable near route distance ${distanceKm.toFixed(1)} km.`);
+      }
+      window.updateSplashProgress(
+        5 + 75 * (index + 1) / sortedSamples.length,
+        `Checking route-wide base terrain: ${index + 1} of ${sortedSamples.length} route samples.`,
+      );
+      if (observedTiles.size > PRELOAD.maxUniqueTiles) {
+        throw new Error(
+          `Route-wide base coverage exceeded the ${PRELOAD.maxUniqueTiles.toLocaleString()}-tile limit. ` +
+          'Playback remains paused; reduce the viewport size or adjust PRELOAD.maxUniqueTiles.'
+        );
+      }
+    }
+
+    throwOnCoverageErrors(errors, requiredSources);
+    window.updateSplashProgress(
+      88,
+      'Route-wide base coverage verified. Close-up terrain and imagery will stream during travel.',
+    );
+  } finally {
+    if (preloadMap) {
+      preloadMap.off('error', onPreloadError);
+      preloadMap.remove();
+    } else {
+      container.remove();
+    }
+  }
 }
 
 // ---------------------------------------------------------------
@@ -182,11 +436,10 @@ function centeredModelPosition(trainLngLat, headingDeg) {
 // ---------------------------------------------------------------
 // Map initialization
 // ---------------------------------------------------------------
-let mapInitialized = false;
-
 function initializeMap() {
   if (mapInitialized) return;
   mapInitialized = true;
+  clearTimeout(initialStyleTimeout);
 
   try {
   // Terrain
@@ -197,12 +450,13 @@ function initializeMap() {
     maxzoom: 14,
   });
   map.setTerrain({ source: 'mapbox-dem', exaggeration: 1 });
-
-  map.addLayer({
-    id: 'sky-layer',
-    type: 'sky',
-    paint: { 'sky-type': 'atmosphere', 'sky-atmosphere-sun-intensity': 8 },
-  });
+  // Explicitly disable fog/atmospheric haze. Classic styles like
+  // satellite-streets-v12 don't define fog by default and nothing else
+  // in this file calls setFog(), so this is normally a no-op — but it
+  // forces fog off regardless of what any other script/session may have
+  // set, rather than leaving it to chance.
+  map.setFog(null);
+  for (const sourceId of requiredRasterSourceIds(map)) mainCoverageSources.add(sourceId);
 
   // Route lines — one glow+line layer pair per segment, styled solid
   // ('central', on the green Central Corridor line) or dashed
@@ -278,41 +532,30 @@ function initializeMap() {
   });
 
   // ---------------------------------------------------------------
-  // Train — one native 3D model, updated along the route during playback.
+  // Train — model rotation follows route bearing; the GeoJSON point stays
+  // at the exact distance-along-route coordinate used by the yellow line.
   // ---------------------------------------------------------------
   const initialHeading = headingAt(0);
-  map.addSource('train-model-source', {
-    type: 'model',
-    models: {
-      'ghana-freight-train': {
-        uri: MODEL.uri,
-        position: centeredModelPosition([STATIONS[0].lng, STATIONS[0].lat], initialHeading),
-        // No roll: this model's own bounding box (Y=height 5.1m, Z=length
-        // 80.1m) confirms it's already flat at identity rotation, since
-        // Mapbox's model source maps local Y to world "up" by default.
-        // The 90° roll from the Eastern Corridor notes was for a model
-        // with a different local axis layout — applying it here was
-        // exactly what tipped this train upright.
-        orientation: [0, 0, initialHeading + MODEL.bearingOffsetDeg],
-      },
-    },
+  map.addModel('ghana-freight-train', MODEL.uri);
+  map.addSource('train-position-source', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [trainFeatureAt(0)] },
   });
   map.addLayer({
     id: 'train-model-layer',
     type: 'model',
-    source: 'train-model-source',
+    source: 'train-position-source',
+    layout: { 'model-id': 'ghana-freight-train' },
     paint: {
       'model-scale': MODEL.scale,
-      // Follow terrain until usable DEM samples are available, then use
-      // the smoothed route profile instead of terrain-derived model tilt.
+      'model-translation': ['get', 'modelTranslation'],
       'model-elevation-reference': 'ground',
+      'model-rotation': ['get', 'modelRotation'],
     },
   });
 
-  // Frame the train at Accra before the initial playback frame.
-  const staticTrainPt = [STATIONS[0].lng, STATIONS[0].lat];
-  const staticCamPt = chaseCameraPoint(staticTrainPt, initialHeading);
-  positionChaseCamera(staticCamPt, staticTrainPt);
+  const initialPoint = routeCoordinateAt(0);
+  positionChaseCamera(map, chaseCameraPoint(initialPoint, initialHeading), initialPoint, initialHeading);
 
   // HUD static fields
   document.getElementById('routeOrigin').textContent = STATIONS[0].name;
@@ -322,14 +565,37 @@ function initializeMap() {
   document.getElementById('labelEnd').textContent = STATIONS[STATIONS.length - 1].name;
   document.getElementById('timeTotal').textContent = formatTime(JOURNEY.totalDurationSeconds);
 
-  hideSplashScreen();
-  // Intentionally NOT auto-starting: the page should load paused, with
-  // the train stationary at Accra, until the user presses Play.
+  window.updateSplashProgress(1, 'Map ready. Measuring and preloading route coverage…');
+  completeStartup().catch((error) => {
+    console.error('Route terrain and imagery preload failed:', error);
+    window.showSplashError(
+      `Route preload failed: ${error.message || error} Check connectivity and Mapbox access, then retry.`,
+    );
+  });
   } catch (error) {
     mapInitialized = false;
     console.error('Map initialization failed:', error);
     window.showSplashError(`Map initialization failed: ${error.message || error}`);
   }
+}
+
+async function completeStartup() {
+  await preloadRouteCoverage();
+
+  map.resize();
+  Playback.renderInitial();
+  await waitForMapSettled(map, PRELOAD.viewportTimeoutMs);
+  throwOnCoverageErrors(mainMapErrors, mainCoverageSources);
+  if (!Number.isFinite(map.queryTerrainElevation(routeCoordinateAt(0), { exaggerated: false }))) {
+    throw new Error('The initial terrain elevation is unavailable after the map settled.');
+  }
+
+  Playback.renderInitial();
+  await waitForMapSettled(map, PRELOAD.viewportTimeoutMs);
+  throwOnCoverageErrors(mainMapErrors, mainCoverageSources);
+  Playback.enable();
+  map.off('error', captureMainMapError);
+  window.hideSplashScreen();
 }
 
 map.once('style.load', initializeMap);
@@ -348,6 +614,7 @@ function formatTime(sec) {
 
 const Playback = (() => {
   let playing = false;
+  let playbackReady = false;
   let elapsed = 0; // seconds
   let lastFrameTime = null;
   let rafId = null;
@@ -380,36 +647,21 @@ const Playback = (() => {
   // Renders the model/camera/HUD for a given elapsed time. Shared by the
   // normal playback loop and seek() (scrubbing), so dragging the progress
   // bar updates the exact same things, whether playing or paused.
-  function renderAt(elapsedSeconds) {
+  function renderAt(elapsedSeconds, forceTerrainRefresh = false) {
     const fraction = Math.min(elapsedSeconds / JOURNEY.totalDurationSeconds, 1);
     const distanceKm = fraction * totalDistanceKm;
 
-    const trainLngLat = turf.along(fullRoute, distanceKm, { units: 'kilometers' }).geometry.coordinates;
+    const trainLngLat = routeCoordinateAt(distanceKm);
     const headingDeg = headingAt(distanceKm);
 
-    // Update the model position and heading for this route frame.
-    const modelSource = map.getSource('train-model-source');
-    if (modelSource) {
-      modelSource.setModels({
-        'ghana-freight-train': {
-          uri: MODEL.uri,
-          position: centeredModelPosition(trainLngLat, headingDeg),
-          orientation: [0, 0, headingDeg + MODEL.bearingOffsetDeg],
-        },
-      });
-    }
-    const trainGroundElevation = getTrainGroundElevation(distanceKm);
-    if (Number.isFinite(trainGroundElevation)) {
-      if (!trainTerrainProfileActive) {
-        map.setPaintProperty('train-model-layer', 'model-elevation-reference', 'sea');
-        trainTerrainProfileActive = true;
-      }
-      map.setPaintProperty('train-model-layer', 'model-translation', [0, 0, trainGroundElevation]);
-    }
+    map.getSource('train-position-source').setData({
+      type: 'FeatureCollection',
+      features: [trainFeatureAt(distanceKm, forceTerrainRefresh)],
+    });
 
     // Keep the camera centered behind the train and above the terrain.
     const camLngLat = chaseCameraPoint(trainLngLat, headingDeg);
-    positionChaseCamera(camLngLat, trainLngLat);
+    positionChaseCamera(map, camLngLat, trainLngLat, headingDeg);
 
     updateHUD(distanceKm, fraction);
     return fraction;
@@ -438,6 +690,7 @@ const Playback = (() => {
   }
 
   function start() {
+    if (!playbackReady) return;
     playing = true;
     lastFrameTime = null;
     setPlayIcon(true);
@@ -449,11 +702,13 @@ const Playback = (() => {
     if (rafId) cancelAnimationFrame(rafId);
   }
   function toggle() {
+    if (!playbackReady) return;
     if (arrived) restart();
     else if (playing) pause();
     else start();
   }
   function restart() {
+    if (!playbackReady) return;
     pause();
     elapsed = 0;
     arrived = false;
@@ -465,6 +720,7 @@ const Playback = (() => {
   // Scrub to an arbitrary point in the journey (0 to 1). Works whether
   // paused or playing — renders immediately so dragging feels live.
   function seek(fraction) {
+    if (!playbackReady) return;
     const clamped = Math.max(0, Math.min(1, fraction));
     elapsed = clamped * JOURNEY.totalDurationSeconds;
     lastFrameTime = null; // avoid a big dt jump on the next playing frame
@@ -475,14 +731,38 @@ const Playback = (() => {
       document.getElementById('routeStatus').textContent = 'En Route';
     }
 
-    const renderedFraction = renderAt(elapsed);
+    const renderedFraction = renderAt(elapsed, true);
     if (renderedFraction >= 1 && !arrived) {
       arrived = true;
       onArrival();
     }
   }
 
-  return { start, pause, toggle, restart, seek, get playing() { return playing; } };
+  function renderInitial() {
+    elapsed = 0;
+    arrived = false;
+    renderAt(0, true);
+  }
+
+  function enable() {
+    playbackReady = true;
+    document.getElementById('btnPlayPause').disabled = false;
+    document.getElementById('btnRestart').disabled = false;
+    const track = document.getElementById('progressTrack');
+    track.setAttribute('aria-disabled', 'false');
+    track.style.pointerEvents = 'auto';
+  }
+
+  return {
+    start,
+    pause,
+    toggle,
+    restart,
+    seek,
+    renderInitial,
+    enable,
+    get playing() { return playing; },
+  };
 })();
 
 function setPlayIcon(isPlaying) {

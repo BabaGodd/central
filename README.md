@@ -47,3 +47,37 @@ Yeji → Bimbila → Yendi → Sawla**.
 The service worker caches static assets only. HTML, JavaScript, and CSS are
 always fetched fresh, so code changes appear on reload instead of being served
 from a stale application cache.
+
+## Terrain and imagery startup
+
+Before enabling playback, the app uses a separate, hidden Mapbox map to fit the
+actual route geometry with corridor padding, load its raster imagery and DEM,
+and verify elevation samples along the route and at every station. The visible
+train and camera stay at route distance zero, the clock stays at zero, and
+playback remains disabled until this base-coverage check and the visible
+initial-view tile load have both settled.
+
+The train model spans about 80 m behind its route point. To keep its
+undercarriage from being clipped where that footprint crosses sloping terrain,
+the model-only pitch and vertical clearance follow DEM samples across the
+configured train footprint. This does not offset the GeoJSON train point from
+the route.
+
+The chase camera uses a low bird's-eye view, trails far enough behind to keep
+the complete train model visible, and aims slightly ahead to show the upcoming
+route. No atmosphere sky layer is added, avoiding the style's horizon fog.
+Camera height, trailing distance, and look-ahead distance are tunable in
+`CAMERA` in `config.js`.
+
+This route's high-detail chase view would require thousands of separate
+viewports to preload every close-up tile before playback. That is too slow and
+can exceed Mapbox request limits, so the app deliberately uses a bounded
+route-wide base preflight instead. Close-up terrain and imagery tiles stream
+through Mapbox GL JS's normal source/cache behavior during travel; the route
+panel discloses this. It does not claim that all high-zoom tiles are resident
+before playback or that Mapbox/browser caches retain them for the whole
+journey/offline.
+
+The route-wide check is bounded by `PRELOAD` in `config.js`. A failed tile
+request, unavailable route elevation sample, or stalled map leaves playback
+disabled and presents an explicit retry state.

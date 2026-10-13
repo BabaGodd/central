@@ -97,27 +97,41 @@ const CORRIDOR_STYLE = {
 const MODEL = {
   uri: 'Ghana_Freight_Train.glb',
   scale: [1, 1, 1], // built in real-world meters, so no scaling needed
-  // Lateral offset to recenter the model ON the route line (its own
-  // origin isn't centered on its width) — a few meters. Starting
-  // value per the Eastern Corridor notes — confirm visually, adjust
-  // if it drifts the wrong way (flip sign, or swap +90/-90 below).
-  lateralOffsetM: 1.7,
-  // Yaw correction added on top of the real travel bearing. Mapbox's
-  // model source faces a model's local +Z axis toward world SOUTH at
-  // zero yaw, not north — so raw compass bearing is not plug-and-play.
-  // UNCONFIRMED — start at 0, then correct in 90° steps by watching
-  // whether the train appears to drive forward, backward, or sideways
-  // relative to the track. This needs a visual test; don't trust it
-  // blindly.
+  groundClearanceMeters: 2, // safety margin beneath the model's lowest undercarriage part
+  terrainFootprintAheadMeters: 15,
+  terrainFootprintBehindMeters: 80,
+  terrainSampleSpacingMeters: 5,
+  maxTerrainPitchDegrees: 8,
+  // Visual-only model yaw adjustment. This never changes the GeoJSON point.
   bearingOffsetDeg: 0,
 };
 
+// ---- Route terrain and imagery preflight ----
+const PRELOAD = {
+  // One route-wide view avoids thousands of close-up viewport requests.
+  routePaddingRatio: 0.12,
+  routeElevationSampleCount: 64,
+  maxUniqueTiles: 4096,
+  viewportTimeoutMs: 45000,
+  totalTimeoutMs: 3 * 60 * 1000,
+  tileSizePx: 512,
+  cacheViewportMultiplier: 2,
+  maxCachedTilesPerSource: 128,
+};
+
 // ---- Camera ----
+// Tightened for a closer shot (was chaseBehindKm 0.24 / heightAboveGroundM
+// 60 / pitch 58). Still enough trailing distance to keep the full 80m
+// train in frame at chaseBehindKm 0.14 (140m) plus lookAheadKm (40m) =
+// ~180m camera-to-look-at-point, comfortably more than the train's own
+// length. Treat these as a starting point — tune further by feel once
+// you see it; "closer" is inherently a visual judgment call.
 const CAMERA = {
-  chaseBehindKm: 0.18,        // keep the camera slightly farther behind the 80m train
-  heightAboveGroundM: 120,    // elevated bird-like view following directly behind the train
+  chaseBehindKm: 0.14,        // was 0.24 — closer behind the train
+  heightAboveGroundM: 35,     // was 60 — lower, closer vantage above ground
+  lookAheadKm: 0.04,          // aim just ahead of the train so it stays fully in view
   cameraSmoothing: 0.08,      // Eastern Corridor's confirmed-good value (not yet wired in — see app.js note)
-  pitch: 68,
+  pitch: 58,
 };
 
 // ---- Journey ----

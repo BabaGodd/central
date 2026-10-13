@@ -34,6 +34,7 @@
 
     <p id="splashStatus" class="splash-status">Initializing terrain engine…</p>
     <div class="splash-progress"><div id="splashProgressBar" class="splash-progress-bar"></div></div>
+    <button id="splashRetry" class="splash-retry" type="button">Retry loading</button>
   </div>
 </div>
 
@@ -62,6 +63,7 @@
     <div class="panel-row"><span>Destination</span><strong id="routeDestination">Sawla</strong></div>
     <div class="panel-row"><span>Distance</span><strong id="routeDistance">—</strong></div>
     <div class="panel-row"><span>Status</span><strong id="routeStatus" class="status-live">En Route</strong></div>
+    <p class="panel-note">Route-wide base terrain and imagery are preloaded; close-up tiles stream during travel.</p>
   </aside>
 
   <!-- Right panel: journey status -->
@@ -75,11 +77,11 @@
 
   <!-- Bottom bar -->
   <footer class="bottom-bar">
-    <button id="btnPlayPause" class="ctrl-btn" aria-label="Play or pause">
+    <button id="btnPlayPause" class="ctrl-btn" aria-label="Play or pause" disabled>
       <svg id="iconPlay" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
       <svg id="iconPause" viewBox="0 0 24 24" style="display:none"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>
     </button>
-    <button id="btnRestart" class="ctrl-btn" aria-label="Restart">
+    <button id="btnRestart" class="ctrl-btn" aria-label="Restart" disabled>
       <svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg>
     </button>
 
@@ -88,7 +90,7 @@
         <span id="timeElapsed">00:00</span>
         <span id="timeTotal">07:00</span>
       </div>
-      <div class="progress-track" id="progressTrack">
+      <div class="progress-track" id="progressTrack" aria-disabled="true">
         <div id="progressFill" class="progress-fill"></div>
       </div>
       <div class="progress-labels">
